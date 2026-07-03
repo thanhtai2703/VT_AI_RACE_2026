@@ -1,0 +1,14 @@
+# Phụ thuộc cho lớp code comp/ (ngoài env core của repo Inria).
+# Env CORE (torch/cuda + rasterizer/simple-knn/fused-ssim) cài qua conda theo
+# gaussian-splatting/environment.yml — xem README.md.
+#
+# Các package dưới đây phần lớn ĐÃ có trong env repo; liệt kê để tái lập rõ ràng.
+
+numpy
+Pillow            # validate kích thước ảnh + placeholder resolution
+opencv-python     # scene/cameras.py cần cv2
+plyfile           # load/save point cloud
+tqdm
+
+# lpips: repo dùng module nội bộ lpipsPyTorch (net_type='vgg') — KHÔNG cài pip 'lpips'.
+#        Trọng số VGG tải tự động lần chạy metric đầu (cần internet 1 lần).

@@ -1,0 +1,35 @@
+# configs/base.yaml — hyperparams & cờ mặc định cho MỌI scene.
+# Đọc bởi scripts/run_all.sh (qua parse đơn giản) hoặc tham khảo tay.
+#
+# Quyết định đã chốt:
+#   - Train PINHOLE trực tiếp (bỏ qua distortion k≈0.008 của SIMPLE_RADIAL).
+#     intrinsics test_poses.csv đã là pinhole & khớp f/cx/cy train -> nhất quán.
+#   - KHÔNG dùng --eval: train trên TOÀN BỘ ảnh train; test render qua CSV riêng.
+
+train:
+  iterations: 30000
+  save_iterations: [7000, 30000]
+  test_iterations: [7000, 30000]
+  optimizer_type: sparse_adam      # nhanh ~2.7×; cần rasterizer bản mới
+  antialiasing: true               # EWA filter (Mip-Splatting) — alias-free ở pose OOD
+  sh_degree: 3
+
+# Depth regularization: cần sinh depth (Depth-Anything-V2) + make_depth_scale.py TRƯỚC.
+# Bật sau khi có baseline hợp lệ. Để trống depth_dir = tắt.
+depth:
+  enable: false
+  depth_dir: ""                    # vd outputs/depths/<scene>
+
+# Exposure compensation cho ảnh drone ngoài trời (bật ở vòng tối ưu).
+exposure:
+  enable: false
+  exposure_lr_init: 0.001
+  exposure_lr_final: 0.0001
+  exposure_lr_delay_steps: 5000
+  exposure_lr_delay_mult: 0.001
+
+render:
+  antialiasing: true               # PHẢI khớp train.antialiasing
+
+eval:
+  psnr_max: 30.0                   # giả định cho PSNR_norm — chỉnh khi BTC công bố
