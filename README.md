@@ -59,9 +59,16 @@ python comp/make_submission.py --renders outputs/renders --out submission/submis
 python comp/validate_submission.py --zip submission/submission.zip --data phase1/private_set1
 ```
 
+## Format submission — ĐÃ XÁC NHẬN VỚI BTC (2026-07)
+- File nộp: `submission.zip`.
+- Thư mục scene: **tên gốc** (`HCM0249`, `hcm0031`...), KHÔNG đánh số `scene_001`.
+- Tên ảnh: **giữ tên gốc** trong `test_poses.csv`, đổi đuôi `.JPG` → `.png`.
+- `PSNR_norm = clamp(PSNR / PSNR_max, 0, 1)` — PSNR_max là ngưỡng BTC chọn trước (⏳ chờ con số cụ thể; `local_eval` tạm để 30 dB).
+→ Đây là hành vi MẶC ĐỊNH của `make_submission.py`, chạy không cần cờ.
+
 ## Điểm PHẢI kiểm trước khi nộp
 - [ ] Sanity check convention pose PASS (render ≈ ảnh train/test gốc). Xem PLAN mục 4 bước 2.
-- [ ] **Format submission** (tên thư mục scene, đuôi ảnh) khớp thể lệ BTC — hiện README data KHÔNG nêu rõ; `make_submission.py` mặc định giữ tên gốc + `.png`, có cờ `--keep-ext-jpg`, `--lower-scene`. **Xác nhận với thể lệ.**
 - [ ] `validate_submission.py` báo ✅ (đủ scene, đủ ảnh, đúng size).
 - [ ] `--antialiasing` khớp giữa train và render.
+- [ ] Cập nhật `--psnr_max` cho `local_eval` khi BTC công bố con số.
 ```

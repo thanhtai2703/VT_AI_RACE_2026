@@ -1,1 +1,26 @@
+# Data BTC (3.2GB — chuyển thủ công lên máy GPU, không push)
 phase1/
+
+# Code pipeline thứ 2 của thành viên nhóm (có git riêng, tự quản)
+TriMind_ViettelAIRace2026/
+
+# Output train/render (checkpoint nặng, tái tạo được — không push)
+outputs/models/
+outputs/renders/
+outputs/depths/
+outputs/logs/
+submission/*.zip
+
+# Model weights / checkpoints
+*.pth
+*.ckpt
+*.ply
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

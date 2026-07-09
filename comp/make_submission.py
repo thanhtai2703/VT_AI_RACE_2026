@@ -3,16 +3,13 @@
 #
 # Gom ảnh render của tất cả scene -> submission.zip đúng format.
 #
-# ⚠️ FORMAT SUBMISSION CHÍNH XÁC CHƯA ĐƯỢC BTC CÔNG BỐ RÕ trong README.
-#    Mặc định (an toàn nhất, suy từ dữ liệu):
+# ✅ FORMAT ĐÃ XÁC NHẬN VỚI BTC (2026-07):
 #      submission.zip
-#      ├── <scene_name>/            # tên scene GỐC, vd HCM0249, hcm0031
-#      │   ├── <image_name>.png     # tên ảnh GỐC trong CSV, đổi đuôi -> .png
+#      ├── <scene_name>/            # tên scene GỐC (HCM0249, hcm0031...) — KHÔNG đánh số
+#      │   ├── <image_name>.png     # tên ảnh GỐC trong CSV, đổi đuôi .JPG -> .png
 #      │   └── ...
-#    Có cờ để đổi hành vi nếu luật thi yêu cầu khác:
-#      --keep-ext-jpg   : giữ đuôi .JPG thay vì .png (ảnh vẫn là PNG bên trong)
-#      --lower-scene    : hạ scene name về chữ thường
-#    -> XÁC NHẬN VỚI THỂ LỆ TRƯỚC KHI NỘP.
+#    Đây cũng là hành vi MẶC ĐỊNH của script -> chạy không cần cờ đặc biệt.
+#    (Các cờ --keep-ext-jpg / --lower-scene chỉ giữ lại để dự phòng, KHÔNG dùng.)
 #
 # Ví dụ:
 #   python comp/make_submission.py --renders outputs/renders --out submission/submission.zip
