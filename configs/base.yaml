@@ -10,7 +10,9 @@ train:
   iterations: 30000
   save_iterations: [7000, 30000]
   test_iterations: [7000, 30000]
-  optimizer_type: sparse_adam      # nhanh ~2.7×; cần rasterizer bản mới
+  # optimizer_type: sparse_adam    # TẮT: bản diff-gaussian-rasterization dr_aa
+                                    # (commit 9c5c2028) KHÔNG có SparseGaussianAdam.
+                                    # Repo tự fallback Adam mặc định -> chất lượng như nhau, chậm hơn.
   antialiasing: true               # EWA filter (Mip-Splatting) — alias-free ở pose OOD
   sh_degree: 3
 

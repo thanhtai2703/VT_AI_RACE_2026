@@ -7,7 +7,9 @@
 #
 # ITER mặc định 30000. Đặt ITER=7000 để chạy nhanh sanity ban đầu.
 #
-# Quyết định đã chốt: train pinhole trực tiếp, --antialiasing, sparse_adam, KHÔNG --eval.
+# Quyết định đã chốt: train pinhole trực tiếp, --antialiasing, KHÔNG --eval.
+# LƯU Ý: bản diff-gaussian-rasterization đang dùng KHÔNG có SparseGaussianAdam
+# (repo có try/except -> tự fallback). Nên KHÔNG truyền --optimizer_type sparse_adam.
 
 set -euo pipefail
 
@@ -48,7 +50,6 @@ for scene_dir in "$DATA_ROOT"/*/; do
       -s "$src" \
       -m "$model" \
       $AA_FLAG \
-      --optimizer_type sparse_adam \
       --iterations "$ITER" \
       --save_iterations "$ITER" \
       --test_iterations "$ITER" \
