@@ -65,16 +65,19 @@ for scene_dir in "$DATA_ROOT"/*/; do
   # 1) TRAIN (resume: bỏ qua nếu ĐÃ có model ở BẤT KỲ iteration nào)
   # Dùng iteration lớn nhất hiện có để render (không bắt buộc đúng $ITER) -> giữ lại
   # các scene đã train ở iter khác (vd HCM0249 đã xong 30k) khi loạt này chạy 15k.
+  # '|| true' để set -e + pipefail KHÔNG giết script khi scene chưa có model
+  # (ls fail vì không có thư mục iteration_* -> pipeline trả exit != 0).
   existing_iter="$(ls -d "$model"/point_cloud/iteration_* 2>/dev/null \
-                    | sed 's/.*iteration_//' | sort -n | tail -1)"
+                    | sed 's/.*iteration_//' | sort -n | tail -1 || true)"
   if [[ "$RESUME" -eq 1 && -n "$existing_iter" \
         && -f "$model/point_cloud/iteration_${existing_iter}/point_cloud.ply" ]]; then
     echo "[$scene] ĐÃ TRAIN xong (iteration_${existing_iter}) -> bỏ qua train."
     RENDER_ITER="$existing_iter"
   else
     # Chỉ thêm --densify_grad_threshold khi DENSIFY_GRAD được set (giữ mặc định nếu rỗng).
+    # Dùng if (không dùng '&&') để tránh set -e giết script khi DENSIFY_GRAD rỗng.
     DENSIFY_ARG=""
-    [ -n "$DENSIFY_GRAD" ] && DENSIFY_ARG="--densify_grad_threshold $DENSIFY_GRAD"
+    if [ -n "$DENSIFY_GRAD" ]; then DENSIFY_ARG="--densify_grad_threshold $DENSIFY_GRAD"; fi
     echo "[$scene] TRAIN ($ITER iter)... [densify='${DENSIFY_GRAD:-default}' extra='$EXTRA_TRAIN']"
     rm -rf "$model"   # xoá model dở (nếu có) để train sạch
     ( time "$PY" "$GS/train.py" \
