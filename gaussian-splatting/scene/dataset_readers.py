@@ -94,6 +94,14 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
+        elif intr.model in ("SIMPLE_RADIAL", "RADIAL"):
+            # Dữ liệu cuộc thi dùng SIMPLE_RADIAL: params = [f, cx, cy, k(, k2)].
+            # Quyết định đã chốt: TRAIN PINHOLE TRỰC TIẾP — bỏ qua distortion k
+            # (k≈0.008 rất nhỏ, và test_poses.csv là pinhole thuần với fx/fy/cx/cy
+            # khớp train). params[0] chính là focal length.
+            focal_length_x = intr.params[0]
+            FovY = focal2fov(focal_length_x, height)
+            FovX = focal2fov(focal_length_x, width)
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
