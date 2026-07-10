@@ -35,7 +35,7 @@ fi
 nvcc --version | grep release || true
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || {
   echo "❌ nvidia-smi lỗi — GPU chưa gắn vào container."; exit 1; }
-python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available in torch'; \
+python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available in torch'; \
 print('torch', torch.__version__, '| CUDA', torch.version.cuda, '|', torch.cuda.get_device_name(0))"
 
 # --- 2) Repo Inria (clone kèm submodule nếu chưa có source) ---
@@ -66,7 +66,7 @@ pip install plyfile opencv-python-headless Pillow tqdm numpy
 
 # --- 5) Verify ---
 echo "=== 5) Verify import ==="
-python - <<'PY'
+python3 - <<'PY'
 import importlib, sys
 ok = True
 for m in ["torch", "torchvision", "plyfile", "cv2", "PIL", "tqdm",

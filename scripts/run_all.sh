@@ -17,6 +17,11 @@ DATA_ROOT="${1:?Thiếu DATA_ROOT, vd phase1/public_set}"
 ITER="${2:-30000}"
 AA_FLAG="--antialiasing"
 
+# Tự dò python: máy thuê thường chỉ có python3, máy local có python.
+PY="$(command -v python3 || command -v python)"
+[ -z "$PY" ] && { echo "❌ Không tìm thấy python3/python"; exit 1; }
+echo "[run_all] dùng PY=$PY"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GS="$ROOT/gaussian-splatting"
 MODELS="$ROOT/outputs/models"
@@ -46,7 +51,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
 
   # 1) TRAIN
   echo "[$scene] TRAIN ($ITER iter)..."
-  ( time python "$GS/train.py" \
+  ( time "$PY" "$GS/train.py" \
       -s "$src" \
       -m "$model" \
       $AA_FLAG \
@@ -59,7 +64,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
 
   # 2) RENDER test poses theo CSV
   echo "[$scene] RENDER test poses..."
-  python "$ROOT/comp/render_test_poses.py" \
+  "$PY" "$ROOT/comp/render_test_poses.py" \
     -m "$model" \
     --poses "$csv" \
     --out "$out" \
@@ -70,7 +75,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
   # 3) EVAL (chỉ public)
   if [[ "$IS_PUBLIC" -eq 1 ]]; then
     echo "[$scene] EVAL (Score cục bộ)..."
-    python "$ROOT/comp/local_eval.py" \
+    "$PY" "$ROOT/comp/local_eval.py" \
       --renders "$out" \
       --gt "$scene_dir/test/images" \
       2>&1 | tee "$LOGS/${scene}_eval.log"
@@ -79,5 +84,5 @@ done
 
 echo ""
 echo "=== XONG. Render ở $RENDERS ==="
-echo "Đóng gói:  python comp/make_submission.py --renders outputs/renders --out submission/submission.zip"
-echo "Validate:  python comp/validate_submission.py --zip submission/submission.zip --data $DATA_ROOT"
+echo "Đóng gói:  $PY comp/make_submission.py --renders outputs/renders --out submission/submission.zip"
+echo "Validate:  $PY comp/validate_submission.py --zip submission/submission.zip --data $DATA_ROOT"
