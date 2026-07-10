@@ -22,6 +22,19 @@ PY="$(command -v python3 || command -v python)"
 [ -z "$PY" ] && { echo "❌ Không tìm thấy python3/python"; exit 1; }
 echo "[run_all] dùng PY=$PY"
 
+# --- Chống OOM (24GB VRAM) ---
+# expandable_segments gom lại VRAM bị phân mảnh -> AN TOÀN, KHÔNG đổi chất lượng.
+# Mặc định KHÔNG ép densify (giữ nguyên chất lượng như các scene đã train).
+# Chỉ khi 1 scene vẫn OOM thì set env, vd:
+#   DENSIFY_GRAD=0.0004 bash scripts/run_all.sh phase1/private_set1 30000
+#   (hoặc thêm EXTRA_TRAIN="--data_device cpu")
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+DENSIFY_GRAD="${DENSIFY_GRAD:-}"                  # rỗng = dùng mặc định repo (0.0002)
+EXTRA_TRAIN="${EXTRA_TRAIN:-}"                    # vd "--data_device cpu" nếu vẫn OOM
+
+# --- Resume: bỏ qua scene đã train xong (đã có point_cloud của iteration cuối) ---
+RESUME="${RESUME:-1}"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GS="$ROOT/gaussian-splatting"
 MODELS="$ROOT/outputs/models"
@@ -49,18 +62,28 @@ for scene_dir in "$DATA_ROOT"/*/; do
   echo ""
   echo "########## SCENE: $scene ##########"
 
-  # 1) TRAIN
-  echo "[$scene] TRAIN ($ITER iter)..."
-  ( time "$PY" "$GS/train.py" \
-      -s "$src" \
-      -m "$model" \
-      $AA_FLAG \
-      --iterations "$ITER" \
-      --save_iterations "$ITER" \
-      --test_iterations "$ITER" \
-      --disable_viewer \
-      --quiet \
-  ) 2>&1 | tee "$LOGS/${scene}_train.log"
+  # 1) TRAIN (bỏ qua nếu đã có model iteration cuối — resume)
+  if [[ "$RESUME" -eq 1 && -f "$model/point_cloud/iteration_${ITER}/point_cloud.ply" ]]; then
+    echo "[$scene] ĐÃ TRAIN xong (có iteration_${ITER}) -> bỏ qua train."
+  else
+    # Chỉ thêm --densify_grad_threshold khi DENSIFY_GRAD được set (giữ mặc định nếu rỗng).
+    DENSIFY_ARG=""
+    [ -n "$DENSIFY_GRAD" ] && DENSIFY_ARG="--densify_grad_threshold $DENSIFY_GRAD"
+    echo "[$scene] TRAIN ($ITER iter)... [densify='${DENSIFY_GRAD:-default}' extra='$EXTRA_TRAIN']"
+    rm -rf "$model"   # xoá model dở (nếu có) để train sạch
+    ( time "$PY" "$GS/train.py" \
+        -s "$src" \
+        -m "$model" \
+        $AA_FLAG \
+        --iterations "$ITER" \
+        --save_iterations "$ITER" \
+        --test_iterations "$ITER" \
+        $DENSIFY_ARG \
+        $EXTRA_TRAIN \
+        --disable_viewer \
+        --quiet \
+    ) 2>&1 | tee "$LOGS/${scene}_train.log"
+  fi
 
   # 2) RENDER test poses theo CSV
   echo "[$scene] RENDER test poses..."
