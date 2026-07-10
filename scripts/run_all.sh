@@ -62,9 +62,15 @@ for scene_dir in "$DATA_ROOT"/*/; do
   echo ""
   echo "########## SCENE: $scene ##########"
 
-  # 1) TRAIN (bỏ qua nếu đã có model iteration cuối — resume)
-  if [[ "$RESUME" -eq 1 && -f "$model/point_cloud/iteration_${ITER}/point_cloud.ply" ]]; then
-    echo "[$scene] ĐÃ TRAIN xong (có iteration_${ITER}) -> bỏ qua train."
+  # 1) TRAIN (resume: bỏ qua nếu ĐÃ có model ở BẤT KỲ iteration nào)
+  # Dùng iteration lớn nhất hiện có để render (không bắt buộc đúng $ITER) -> giữ lại
+  # các scene đã train ở iter khác (vd HCM0249 đã xong 30k) khi loạt này chạy 15k.
+  existing_iter="$(ls -d "$model"/point_cloud/iteration_* 2>/dev/null \
+                    | sed 's/.*iteration_//' | sort -n | tail -1)"
+  if [[ "$RESUME" -eq 1 && -n "$existing_iter" \
+        && -f "$model/point_cloud/iteration_${existing_iter}/point_cloud.ply" ]]; then
+    echo "[$scene] ĐÃ TRAIN xong (iteration_${existing_iter}) -> bỏ qua train."
+    RENDER_ITER="$existing_iter"
   else
     # Chỉ thêm --densify_grad_threshold khi DENSIFY_GRAD được set (giữ mặc định nếu rỗng).
     DENSIFY_ARG=""
@@ -83,15 +89,16 @@ for scene_dir in "$DATA_ROOT"/*/; do
         --disable_viewer \
         --quiet \
     ) 2>&1 | tee "$LOGS/${scene}_train.log"
+    RENDER_ITER="$ITER"
   fi
 
-  # 2) RENDER test poses theo CSV
-  echo "[$scene] RENDER test poses..."
+  # 2) RENDER test poses theo CSV (dùng đúng iteration của model)
+  echo "[$scene] RENDER test poses (iteration ${RENDER_ITER})..."
   "$PY" "$ROOT/comp/render_test_poses.py" \
     -m "$model" \
     --poses "$csv" \
     --out "$out" \
-    --iteration "$ITER" \
+    --iteration "$RENDER_ITER" \
     $AA_FLAG \
     2>&1 | tee "$LOGS/${scene}_render.log"
 
