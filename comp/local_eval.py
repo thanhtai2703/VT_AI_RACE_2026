@@ -106,7 +106,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--renders", required=True, help="thư mục ảnh render (hoặc gốc chứa nhiều scene nếu --multi)")
     ap.add_argument("--gt", required=True, help="thư mục ảnh gt (hoặc data root nếu --multi)")
-    ap.add_argument("--psnr_max", type=float, default=30.0)
+    ap.add_argument("--psnr_max", type=float, default=50.0)  # BTC dùng 50 (suy từ điểm thật)
     ap.add_argument("--multi", action="store_true",
                     help="renders=outputs/renders, gt=phase1/public_set -> eval mọi scene & tính Score trung bình")
     args = ap.parse_args()
