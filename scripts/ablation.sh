@@ -20,7 +20,7 @@ PY="$(command -v python3 || command -v python)"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 SCENE="${1:?Thiếu tên scene public, vd hcm0031}"
-ITER="${2:-30000}"
+ITER="${2:-15000}"   # mặc định 15k để quyết nhanh (đủ để so tương đối)
 SRC="$ROOT/phase1/public_set/$SCENE"
 CSV="$SRC/test/test_poses.csv"
 GT="$SRC/test/images"
@@ -46,16 +46,18 @@ run_cfg() {
       2>/dev/null | tee -a "$RESULTS"
 }
 
-# A) baseline
+# Chỉ 2 cấu hình để quyết nhanh (mặc định 15k):
+#   A) baseline (chỉ --antialiasing) — mốc tham chiếu
+#   D) + depth + exposure — cấu hình "full" mạnh nhất
+# So 2 cái: full thắng baseline -> dùng full cho private; ngược lại -> baseline.
 run_cfg "A_baseline" "" ""
-# B) + exposure
-run_cfg "B_exposure" "$EXP_ARGS" "--train_test_exp"
-# C) + depth (nếu đã sinh depth)
+
 if [ -d "$SRC/train/depths" ] && [ -f "$SRC/train/sparse/0/depth_params.json" ]; then
-  run_cfg "C_depth" "-d $SRC/train/depths" ""
   run_cfg "D_depth_exp" "-d $SRC/train/depths $EXP_ARGS" "--train_test_exp"
 else
-  echo "[ablation] ⚠️ Chưa có depth cho $SCENE -> bỏ config C,D. Chạy: bash scripts/gen_depth.sh $SRC"
+  echo "[ablation] ⚠️ Chưa có depth cho $SCENE -> chỉ chạy baseline + exposure (bỏ depth)."
+  echo "           (Muốn có depth: bash scripts/gen_depth.sh $SRC trước.)"
+  run_cfg "B_exposure" "$EXP_ARGS" "--train_test_exp"
 fi
 
 echo ""
