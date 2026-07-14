@@ -120,9 +120,10 @@ for scene_dir in "$DATA_ROOT"/*/; do
   fi
 
   # 2) RENDER test poses theo CSV (dùng đúng iteration của model)
-  # Nếu train có exposure -> render phải khớp --train_test_exp.
+  # KHÔNG áp exposure khi render: exposure học per-training-image, test pose
+  # không có trong bảng -> get_exposure_from_name KeyError. Model train có
+  # exposure vẫn sạch hơn; render test thì render "trần" (không exposure).
   RENDER_EXP_ARG=""
-  if [ "$EXPOSURE" -eq 1 ]; then RENDER_EXP_ARG="--train_test_exp"; fi
   echo "[$scene] RENDER test poses (iteration ${RENDER_ITER})..."
   "$PY" "$ROOT/comp/render_test_poses.py" \
     -m "$model" \

@@ -36,10 +36,15 @@ run_cfg() {
   local out="$ROOT/outputs/ablation_renders/${SCENE}_${tag}"
   echo ""
   echo "########## CONFIG $tag ##########"
-  rm -rf "$model"
-  ( time "$PY" "$GS/train.py" -s "$SRC/train" -m "$model" --antialiasing \
-      --iterations "$ITER" --save_iterations "$ITER" --test_iterations "$ITER" \
-      $train_extra --disable_viewer --quiet ) 2>&1 | tail -3
+  # Resume: nếu config này đã train xong (có model iteration cuối) -> bỏ qua train.
+  if [ -f "$model/point_cloud/iteration_${ITER}/point_cloud.ply" ]; then
+    echo "[$tag] đã có model iteration_${ITER} -> bỏ qua train, chỉ render+eval."
+  else
+    rm -rf "$model"
+    ( time "$PY" "$GS/train.py" -s "$SRC/train" -m "$model" --antialiasing \
+        --iterations "$ITER" --save_iterations "$ITER" --test_iterations "$ITER" \
+        $train_extra --disable_viewer --quiet ) 2>&1 | tail -3
+  fi
   "$PY" "$ROOT/comp/render_test_poses.py" -m "$model" --poses "$CSV" \
       --out "$out" --iteration "$ITER" --antialiasing $render_extra 2>&1 | tail -1
   echo -n "[$tag] " | tee -a "$RESULTS"
@@ -51,14 +56,17 @@ run_cfg() {
 #   A) baseline (chỉ --antialiasing) — mốc tham chiếu
 #   D) + depth + exposure — cấu hình "full" mạnh nhất
 # So 2 cái: full thắng baseline -> dùng full cho private; ngược lại -> baseline.
+# LƯU Ý exposure: TRAIN có $EXP_ARGS (--train_test_exp) nhưng RENDER test pose
+# KHÔNG áp exposure (render_extra = ""). Vì exposure học per-training-image;
+# test pose không nằm trong tập train -> get_exposure_from_name KeyError.
+# Lợi ích exposure nằm ở MODEL (train sạch hơn), không ở lúc render test.
 run_cfg "A_baseline" "" ""
 
 if [ -d "$SRC/train/depths" ] && [ -f "$SRC/train/sparse/0/depth_params.json" ]; then
-  run_cfg "D_depth_exp" "-d $SRC/train/depths $EXP_ARGS" "--train_test_exp"
+  run_cfg "D_depth_exp" "-d $SRC/train/depths $EXP_ARGS" ""
 else
   echo "[ablation] ⚠️ Chưa có depth cho $SCENE -> chỉ chạy baseline + exposure (bỏ depth)."
-  echo "           (Muốn có depth: bash scripts/gen_depth.sh $SRC trước.)"
-  run_cfg "B_exposure" "$EXP_ARGS" "--train_test_exp"
+  run_cfg "B_exposure" "$EXP_ARGS" ""
 fi
 
 echo ""
