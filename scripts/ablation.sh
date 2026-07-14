@@ -26,6 +26,7 @@ CSV="$SRC/test/test_poses.csv"
 GT="$SRC/test/images"
 EXP_ARGS="--exposure_lr_init 0.001 --exposure_lr_final 0.0001 --exposure_lr_delay_steps 5000 --exposure_lr_delay_mult 0.001 --train_test_exp"
 
+mkdir -p "$ROOT/outputs"
 RESULTS="$ROOT/outputs/ablation_${SCENE}.txt"
 : > "$RESULTS"
 
