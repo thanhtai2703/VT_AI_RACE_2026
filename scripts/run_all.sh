@@ -32,6 +32,13 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 DENSIFY_GRAD="${DENSIFY_GRAD:-}"                  # rỗng = dùng mặc định repo (0.0002)
 EXTRA_TRAIN="${EXTRA_TRAIN:-}"                    # vd "--data_device cpu" nếu vẫn OOM
 
+# --- Cải tiến chất lượng (bật qua env) ---
+# DEPTH=1     -> dùng depth reg, thêm '-d <scene>/train/depths' (phải chạy gen_depth.sh trước)
+# EXPOSURE=1  -> bật exposure compensation (data drone ngoài trời)
+DEPTH="${DEPTH:-0}"
+EXPOSURE="${EXPOSURE:-0}"
+EXPOSURE_ARGS="--exposure_lr_init 0.001 --exposure_lr_final 0.0001 --exposure_lr_delay_steps 5000 --exposure_lr_delay_mult 0.001 --train_test_exp"
+
 # --- Resume: bỏ qua scene đã train xong (đã có point_cloud của iteration cuối) ---
 RESUME="${RESUME:-1}"
 
@@ -78,7 +85,22 @@ for scene_dir in "$DATA_ROOT"/*/; do
     # Dùng if (không dùng '&&') để tránh set -e giết script khi DENSIFY_GRAD rỗng.
     DENSIFY_ARG=""
     if [ -n "$DENSIFY_GRAD" ]; then DENSIFY_ARG="--densify_grad_threshold $DENSIFY_GRAD"; fi
-    echo "[$scene] TRAIN ($ITER iter)... [densify='${DENSIFY_GRAD:-default}' extra='$EXTRA_TRAIN']"
+
+    # Depth reg: chỉ bật khi DEPTH=1 VÀ có thư mục depths + depth_params.json.
+    DEPTH_ARG=""
+    if [ "$DEPTH" -eq 1 ]; then
+      if [ -d "$src/depths" ] && [ -f "$src/sparse/0/depth_params.json" ]; then
+        DEPTH_ARG="-d $src/depths"
+      else
+        echo "[$scene] ⚠️ DEPTH=1 nhưng thiếu depths/ hoặc depth_params.json -> BỎ depth reg. Chạy gen_depth.sh trước."
+      fi
+    fi
+
+    # Exposure compensation.
+    EXP_ARG=""
+    if [ "$EXPOSURE" -eq 1 ]; then EXP_ARG="$EXPOSURE_ARGS"; fi
+
+    echo "[$scene] TRAIN ($ITER iter)... [densify='${DENSIFY_GRAD:-default}' depth=$DEPTH exposure=$EXPOSURE extra='$EXTRA_TRAIN']"
     rm -rf "$model"   # xoá model dở (nếu có) để train sạch
     ( time "$PY" "$GS/train.py" \
         -s "$src" \
@@ -88,6 +110,8 @@ for scene_dir in "$DATA_ROOT"/*/; do
         --save_iterations "$ITER" \
         --test_iterations "$ITER" \
         $DENSIFY_ARG \
+        $DEPTH_ARG \
+        $EXP_ARG \
         $EXTRA_TRAIN \
         --disable_viewer \
         --quiet \
@@ -96,6 +120,9 @@ for scene_dir in "$DATA_ROOT"/*/; do
   fi
 
   # 2) RENDER test poses theo CSV (dùng đúng iteration của model)
+  # Nếu train có exposure -> render phải khớp --train_test_exp.
+  RENDER_EXP_ARG=""
+  if [ "$EXPOSURE" -eq 1 ]; then RENDER_EXP_ARG="--train_test_exp"; fi
   echo "[$scene] RENDER test poses (iteration ${RENDER_ITER})..."
   "$PY" "$ROOT/comp/render_test_poses.py" \
     -m "$model" \
@@ -103,6 +130,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
     --out "$out" \
     --iteration "$RENDER_ITER" \
     $AA_FLAG \
+    $RENDER_EXP_ARG \
     2>&1 | tee "$LOGS/${scene}_render.log"
 
   # 3) EVAL (chỉ public)
