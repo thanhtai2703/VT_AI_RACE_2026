@@ -39,9 +39,10 @@ $PY -m pip install -q opencv-python-headless matplotlib 2>/dev/null || true
 gen_one() {
   local scene_dir="$1"
   local scene="$(basename "$scene_dir")"
-  local imgs="$scene_dir/train/images"
-  local depths="$scene_dir/train/depths"
-  local sparse="$scene_dir/train"
+  # Đường dẫn TUYỆT ĐỐI — bắt buộc, vì run.py chạy sau khi 'cd' vào $DAV2.
+  local imgs="$(cd "$scene_dir/train" && pwd)/images"
+  local depths="$(cd "$scene_dir/train" && pwd)/depths"
+  local sparse="$(cd "$scene_dir/train" && pwd)"
 
   if [[ ! -d "$imgs" ]]; then
     echo "[$scene] BỎ QUA (không có train/images)"; return 0
@@ -49,7 +50,7 @@ gen_one() {
   echo ""
   echo "########## DEPTH: $scene ##########"
 
-  # 1) Sinh inverse-depth map (grayscale, giữ giá trị)
+  # 1) Sinh inverse-depth map (grayscale, giữ giá trị). --outdir TUYỆT ĐỐI.
   mkdir -p "$depths"
   ( cd "$DAV2" && $PY run.py --encoder vitl --pred-only --grayscale \
       --img-path "$imgs" --outdir "$depths" )
