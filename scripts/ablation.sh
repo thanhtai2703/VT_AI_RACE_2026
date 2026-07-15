@@ -19,6 +19,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GS="$ROOT/gaussian-splatting"
 PY="$(command -v python3 || command -v python)"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+export PYTHONUNBUFFERED=1   # progress bar tqdm hiện real-time khi qua pipe tee
 
 SCENE="${1:?Thiếu tên scene public, vd hcm0031}"
 ITER="${2:-15000}"   # mặc định 15k để quyết nhanh (đủ để so tương đối)
@@ -42,9 +43,11 @@ run_cfg() {
     echo "[$tag] đã có model iteration_${ITER} -> bỏ qua train, chỉ render+eval."
   else
     rm -rf "$model"
+    # Stream progress bar ra màn hình + lưu log đầy đủ vào file (chẩn đoán nếu lỗi).
+    # KHÔNG dùng --quiet để thấy cả test PSNR/L1 ở mốc test_iterations.
     ( time "$PY" "$GS/train.py" -s "$SRC/train" -m "$model" --antialiasing \
         --iterations "$ITER" --save_iterations "$ITER" --test_iterations "$ITER" \
-        $train_extra --disable_viewer --quiet ) 2>&1 | tail -3
+        $train_extra --disable_viewer ) 2>&1 | tee "$ROOT/outputs/ablation_${SCENE}_${tag}_train.log"
   fi
   "$PY" "$ROOT/comp/render_test_poses.py" -m "$model" --poses "$CSV" \
       --out "$out" --iteration "$ITER" --antialiasing $render_extra 2>&1 | tail -1
