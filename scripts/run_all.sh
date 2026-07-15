@@ -30,13 +30,17 @@ echo "[run_all] dùng PY=$PY"
 #   (hoặc thêm EXTRA_TRAIN="--data_device cpu")
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 DENSIFY_GRAD="${DENSIFY_GRAD:-}"                  # rỗng = dùng mặc định repo (0.0002)
+DENSIFY_UNTIL="${DENSIFY_UNTIL:-}"               # rỗng = mặc định repo (15000). Aerial: thử 20000.
+PERCENT_DENSE="${PERCENT_DENSE:-}"               # rỗng = mặc định repo (0.01).
 EXTRA_TRAIN="${EXTRA_TRAIN:-}"                    # vd "--data_device cpu" nếu vẫn OOM
 
 # --- Cải tiến chất lượng (bật qua env) ---
 # DEPTH=1     -> dùng depth reg, thêm '-d <scene>/train/depths' (phải chạy gen_depth.sh trước)
 # EXPOSURE=1  -> bật exposure compensation (data drone ngoài trời)
+# MIP=1       -> Mip-Splatting 3D filter (chống aliasing ở novel pose). PHẢI khớp cờ khi render.
 DEPTH="${DEPTH:-0}"
 EXPOSURE="${EXPOSURE:-0}"
+MIP="${MIP:-0}"
 EXPOSURE_ARGS="--exposure_lr_init 0.001 --exposure_lr_final 0.0001 --exposure_lr_delay_steps 5000 --exposure_lr_delay_mult 0.001 --train_test_exp"
 
 # --- Resume: bỏ qua scene đã train xong (đã có point_cloud của iteration cuối) ---
@@ -85,6 +89,12 @@ for scene_dir in "$DATA_ROOT"/*/; do
     # Dùng if (không dùng '&&') để tránh set -e giết script khi DENSIFY_GRAD rỗng.
     DENSIFY_ARG=""
     if [ -n "$DENSIFY_GRAD" ]; then DENSIFY_ARG="--densify_grad_threshold $DENSIFY_GRAD"; fi
+    if [ -n "$DENSIFY_UNTIL" ]; then DENSIFY_ARG="$DENSIFY_ARG --densify_until_iter $DENSIFY_UNTIL"; fi
+    if [ -n "$PERCENT_DENSE" ]; then DENSIFY_ARG="$DENSIFY_ARG --percent_dense $PERCENT_DENSE"; fi
+
+    # Mip-Splatting 3D filter.
+    MIP_ARG=""
+    if [ "$MIP" -eq 1 ]; then MIP_ARG="--mip_filter"; fi
 
     # Depth reg: chỉ bật khi DEPTH=1 VÀ có thư mục depths + depth_params.json.
     DEPTH_ARG=""
@@ -100,7 +110,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
     EXP_ARG=""
     if [ "$EXPOSURE" -eq 1 ]; then EXP_ARG="$EXPOSURE_ARGS"; fi
 
-    echo "[$scene] TRAIN ($ITER iter)... [densify='${DENSIFY_GRAD:-default}' depth=$DEPTH exposure=$EXPOSURE extra='$EXTRA_TRAIN']"
+    echo "[$scene] TRAIN ($ITER iter)... [densify_grad='${DENSIFY_GRAD:-default}' densify_until='${DENSIFY_UNTIL:-default}' percent_dense='${PERCENT_DENSE:-default}' depth=$DEPTH exposure=$EXPOSURE mip=$MIP extra='$EXTRA_TRAIN']"
     rm -rf "$model"   # xoá model dở (nếu có) để train sạch
     ( time "$PY" "$GS/train.py" \
         -s "$src" \
@@ -112,6 +122,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
         $DENSIFY_ARG \
         $DEPTH_ARG \
         $EXP_ARG \
+        $MIP_ARG \
         $EXTRA_TRAIN \
         --disable_viewer \
         --quiet \
@@ -124,6 +135,9 @@ for scene_dir in "$DATA_ROOT"/*/; do
   # không có trong bảng -> get_exposure_from_name KeyError. Model train có
   # exposure vẫn sạch hơn; render test thì render "trần" (không exposure).
   RENDER_EXP_ARG=""
+  # Mip-Splatting: render PHẢI khớp cờ khi train (filter_3D đã nằm trong PLY).
+  RENDER_MIP_ARG=""
+  if [ "$MIP" -eq 1 ]; then RENDER_MIP_ARG="--mip_filter"; fi
   echo "[$scene] RENDER test poses (iteration ${RENDER_ITER})..."
   "$PY" "$ROOT/comp/render_test_poses.py" \
     -m "$model" \
@@ -132,6 +146,7 @@ for scene_dir in "$DATA_ROOT"/*/; do
     --iteration "$RENDER_ITER" \
     $AA_FLAG \
     $RENDER_EXP_ARG \
+    $RENDER_MIP_ARG \
     2>&1 | tee "$LOGS/${scene}_render.log"
 
   # 3) EVAL (chỉ public)

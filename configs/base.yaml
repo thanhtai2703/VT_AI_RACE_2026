@@ -13,8 +13,19 @@ train:
   # optimizer_type: sparse_adam    # TẮT: bản diff-gaussian-rasterization dr_aa
                                     # (commit 9c5c2028) KHÔNG có SparseGaussianAdam.
                                     # Repo tự fallback Adam mặc định -> chất lượng như nhau, chậm hơn.
-  antialiasing: true               # EWA filter (Mip-Splatting) — alias-free ở pose OOD
+  antialiasing: true               # EWA 2D screen-space low-pass (repo dr_aa, h_var=0.3)
   sh_degree: 3
+  # Densification tuning cho aerial (bật qua env run_all.sh, rỗng = mặc định repo).
+  # densify_grad_threshold: 0.0002 (repo)   -> aerial thử 0.00015 (densify tích cực hơn)
+  # densify_until_iter:     15000  (repo)   -> aerial thử 20000 (kéo dài khi train 30k)
+  # percent_dense:          0.01   (repo)
+  # ⚠️ densify mạnh -> model to hơn -> KIỂM kích thước JPG submission (≤350MB) sau ablation.
+
+# Mip-Splatting 3D filter (world-space low-pass, chống aliasing ở novel pose).
+# Bù cho việc rasterizer dr_aa chỉ có low-pass 2D screen-space. Pure-Python, KHÔNG rebuild CUDA.
+# Bật khi train: --mip_filter (env MIP=1 trong run_all.sh). Render PHẢI khớp cờ (filter_3D lưu trong PLY).
+mip:
+  enable: false
 
 # Depth regularization: cần sinh depth (Depth-Anything-V2) + make_depth_scale.py TRƯỚC.
 # Bật sau khi có baseline hợp lệ. Để trống depth_dir = tắt.

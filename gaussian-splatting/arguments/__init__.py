@@ -69,6 +69,7 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
+        self.mip_filter = False          # Mip-Splatting world-space 3D low-pass filter
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):

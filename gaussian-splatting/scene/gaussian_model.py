@@ -10,6 +10,7 @@
 #
 
 import torch
+import math
 import numpy as np
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
@@ -58,6 +59,9 @@ class GaussianModel:
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
         self.max_radii2D = torch.empty(0)
+        # Mip-Splatting 3D filter: per-Gaussian world-space low-pass std (N,1).
+        # Not an optimizer param (no gradient); recomputed periodically from cameras.
+        self.filter_3D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
@@ -75,24 +79,26 @@ class GaussianModel:
             self._rotation,
             self._opacity,
             self.max_radii2D,
+            self.filter_3D,
             self.xyz_gradient_accum,
             self.denom,
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
         )
-    
+
     def restore(self, model_args, training_args):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
+        (self.active_sh_degree,
+        self._xyz,
+        self._features_dc,
         self._features_rest,
-        self._scaling, 
-        self._rotation, 
+        self._scaling,
+        self._rotation,
         self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum, 
+        self.max_radii2D,
+        self.filter_3D,
+        xyz_gradient_accum,
         denom,
-        opt_dict, 
+        opt_dict,
         self.spatial_lr_scale) = model_args
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
@@ -102,11 +108,78 @@ class GaussianModel:
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
-    
+
+    @property
+    def get_scaling_with_3D_filter(self):
+        # Mip-Splatting 3D filter: add the per-Gaussian world-space low-pass std
+        # in quadrature to every axis so no Gaussian is thinner than the local
+        # sampling limit. Falls back to raw scaling if the filter isn't computed.
+        scales = self.get_scaling
+        if self.filter_3D.numel() == 0:
+            return scales
+        scales = torch.square(scales) + torch.square(self.filter_3D)
+        return torch.sqrt(scales)
+
+    @property
+    def get_opacity_with_3D_filter(self):
+        # Compensate opacity for the energy gained when dilating the covariance:
+        # opacity * sqrt(det(Sigma) / det(Sigma + filter^2 I)). Sigma is diagonal
+        # in the scaling basis, so each det is the product of the three axis vars.
+        opacity = self.opacity_activation(self._opacity)
+        if self.filter_3D.numel() == 0:
+            return opacity
+        scales = self.get_scaling
+        scales_square = torch.square(scales)
+        det1 = scales_square.prod(dim=1)
+        scales_after_square = scales_square + torch.square(self.filter_3D)
+        det2 = scales_after_square.prod(dim=1)
+        coef = torch.sqrt(det1 / det2)
+        return opacity * coef[..., None]
+
+    @torch.no_grad()
+    def compute_3D_filter(self, cameras):
+        # For each Gaussian, find its highest sampling rate (focal / distance)
+        # over all training cameras that see it; the filter std is the world-space
+        # size of one pixel at that rate. Standard Mip-Splatting formulation.
+        xyz = self.get_xyz
+        distance = torch.ones((xyz.shape[0]), device=xyz.device) * 100000.0
+        valid_points = torch.zeros((xyz.shape[0]), device=xyz.device, dtype=torch.bool)
+
+        focal_length = 0.0
+        for camera in cameras:
+            # Camera-space coordinates of every Gaussian.
+            R = torch.tensor(camera.R, device=xyz.device, dtype=torch.float32)
+            T = torch.tensor(camera.T, device=xyz.device, dtype=torch.float32)
+            xyz_cam = xyz @ R + T[None, :]
+            z = xyz_cam[:, 2]
+            # In front of the camera (small epsilon to avoid the exact plane).
+            in_front = z > 0.2
+            # Project to normalised image coords and keep an in-frustum margin of 1.15x.
+            x = xyz_cam[:, 0] / z
+            y = xyz_cam[:, 1] / z
+            tanfovx = math.tan(camera.FoVx * 0.5)
+            tanfovy = math.tan(camera.FoVy * 0.5)
+            in_frustum = in_front & (x.abs() < tanfovx * 1.15) & (y.abs() < tanfovy * 1.15)
+            valid_points = valid_points | in_frustum
+
+            # Nearest camera along z drives the max sampling rate.
+            z_masked = torch.where(in_frustum, z, torch.full_like(z, 100000.0))
+            distance = torch.min(distance, z_masked)
+
+            # focal_x in pixels for this camera (all train cams share intrinsics here).
+            this_focal = camera.image_width / (2.0 * tanfovx)
+            focal_length = max(focal_length, this_focal)
+
+        # Gaussians seen by no camera keep the sentinel distance -> use the median
+        # of the valid ones so their filter stays finite and reasonable.
+        distance[~valid_points] = distance[valid_points].max() if valid_points.any() else 1.0
+        filter_3D = distance / focal_length * (0.2 ** 0.5)
+        self.filter_3D = filter_3D[..., None]
+
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
-    
+
     @property
     def get_xyz(self):
         return self._xyz
@@ -170,6 +243,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.filter_3D = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.exposure_mapping = {cam_info.image_name: idx for idx, cam_info in enumerate(cam_infos)}
         self.pretrained_exposures = None
         exposure = torch.eye(3, 4, device="cuda")[None].repeat(len(cam_infos), 1, 1)
@@ -234,6 +308,9 @@ class GaussianModel:
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
+        # Mip-Splatting: persist the per-Gaussian 3D filter std so rendering can
+        # reapply it without needing the training cameras.
+        l.append('filter_3D')
         return l
 
     def save_ply(self, path):
@@ -246,11 +323,15 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
+        if self.filter_3D.numel() == self._xyz.shape[0]:
+            filter_3D = self.filter_3D.detach().cpu().numpy().reshape(-1, 1)
+        else:
+            filter_3D = np.zeros((xyz.shape[0], 1), dtype=np.float32)
 
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, filter_3D), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
@@ -311,6 +392,15 @@ class GaussianModel:
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
+        # Mip-Splatting 3D filter, if this PLY was saved with one. Old PLYs (baseline
+        # models) lack the attribute -> leave filter_3D empty so getters fall back to raw.
+        prop_names = [p.name for p in plydata.elements[0].properties]
+        if "filter_3D" in prop_names:
+            filter_3D = np.asarray(plydata.elements[0]["filter_3D"])[..., np.newaxis]
+            self.filter_3D = torch.tensor(filter_3D, dtype=torch.float, device="cuda")
+        else:
+            self.filter_3D = torch.empty(0, device="cuda")
+
         self.active_sh_degree = self.max_sh_degree
 
     def replace_tensor_to_optimizer(self, tensor, name):
@@ -361,6 +451,8 @@ class GaussianModel:
 
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
+        if self.filter_3D.numel() > 0:
+            self.filter_3D = self.filter_3D[valid_points_mask]
         self.tmp_radii = self.tmp_radii[valid_points_mask]
 
     def cat_tensors_to_optimizer(self, tensors_dict):
@@ -405,6 +497,9 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        # filter_3D is recomputed from cameras right after densification in train.py;
+        # keep its length consistent with the new point count in the meantime.
+        self.filter_3D = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]

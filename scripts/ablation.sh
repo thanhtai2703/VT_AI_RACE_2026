@@ -6,12 +6,13 @@
 #   bash scripts/ablation.sh hcm0031 30000
 #
 # Chạy 4 cấu hình, mỗi cái train + render + eval, in bảng Score cuối cùng:
-#   A) baseline (chỉ --antialiasing)
-#   B) + exposure
-#   C) + depth        (cần chạy gen_depth.sh cho scene này trước)
-#   D) + depth + exposure
+#   A_baseline — stock (chỉ --antialiasing)
+#   B_densify  — densify tuning aerial
+#   C_mip      — Mip-Splatting 3D filter
+#   D_both     — densify + mip
 #
-# -> Chọn cấu hình Score cao nhất, dùng cho run_all.sh private.
+# -> Chọn cấu hình Score cao nhất (ưu tiên LPIPS thấp), dùng cho run_all.sh private
+#    (nhớ set env tương ứng: DENSIFY_GRAD/DENSIFY_UNTIL và/hoặc MIP=1).
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -52,22 +53,19 @@ run_cfg() {
       2>/dev/null | tee -a "$RESULTS"
 }
 
-# Chỉ 2 cấu hình để quyết nhanh (mặc định 15k):
-#   A) baseline (chỉ --antialiasing) — mốc tham chiếu
-#   D) + depth + exposure — cấu hình "full" mạnh nhất
-# So 2 cái: full thắng baseline -> dùng full cho private; ngược lại -> baseline.
-# LƯU Ý exposure: TRAIN có $EXP_ARGS (--train_test_exp) nhưng RENDER test pose
-# KHÔNG áp exposure (render_extra = ""). Vì exposure học per-training-image;
-# test pose không nằm trong tập train -> get_exposure_from_name KeyError.
-# Lợi ích exposure nằm ở MODEL (train sạch hơn), không ở lúc render test.
-run_cfg "A_baseline" "" ""
+# 4 cấu hình nâng cấp backbone (mặc định 15k để quyết nhanh):
+#   A_baseline — stock (chỉ --antialiasing), mốc tham chiếu.
+#   B_densify  — densify tuning aerial (grad 0.00015 + until 20000).
+#   C_mip      — Mip-Splatting 3D filter (--mip_filter train + render).
+#   D_both     — densify tuning + mip filter (kỳ vọng mạnh nhất).
+# ⚠️ Config có mip: RENDER phải kèm --mip_filter (filter_3D nằm trong PLY, cờ phải khớp).
+# ⚠️ densify_until phải ≤ ITER; ở 15k thì dùng 12000 để còn giai đoạn tinh chỉnh sau densify.
+DENSIFY_TUNE="--densify_grad_threshold 0.00015 --densify_until_iter $(( ITER > 20000 ? 20000 : (ITER * 4 / 5) ))"
 
-if [ -d "$SRC/train/depths" ] && [ -f "$SRC/train/sparse/0/depth_params.json" ]; then
-  run_cfg "D_depth_exp" "-d $SRC/train/depths $EXP_ARGS" ""
-else
-  echo "[ablation] ⚠️ Chưa có depth cho $SCENE -> chỉ chạy baseline + exposure (bỏ depth)."
-  run_cfg "B_exposure" "$EXP_ARGS" ""
-fi
+run_cfg "A_baseline" "" ""
+run_cfg "B_densify"  "$DENSIFY_TUNE" ""
+run_cfg "C_mip"      "--mip_filter" "--mip_filter"
+run_cfg "D_both"     "$DENSIFY_TUNE --mip_filter" "--mip_filter"
 
 echo ""
 echo "======================================================"

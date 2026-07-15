@@ -74,16 +74,17 @@ def find_ply(model_path, iteration):
 
 class _Pipe:
     """PipelineParams tối giản cho render (khớp field mà render() đọc)."""
-    def __init__(self, antialiasing):
+    def __init__(self, antialiasing, mip_filter=False):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = antialiasing
+        self.mip_filter = mip_filter
 
 
 def render_test_poses(model_path, poses_csv, out_dir, sh_degree=3,
                       iteration=-1, antialiasing=False, white_background=False,
-                      use_trained_exp=False, quiet=False):
+                      use_trained_exp=False, mip_filter=False, quiet=False):
     safe_state(quiet)
 
     poses = read_test_poses_csv(poses_csv)
@@ -98,7 +99,10 @@ def render_test_poses(model_path, poses_csv, out_dir, sh_degree=3,
 
     bg = torch.tensor([1, 1, 1] if white_background else [0, 0, 0],
                       dtype=torch.float32, device="cuda")
-    pipe = _Pipe(antialiasing)
+    pipe = _Pipe(antialiasing, mip_filter=mip_filter)
+    if mip_filter and gaussians.filter_3D.numel() == 0:
+        print("[render] ⚠️ --mip_filter bật nhưng PLY không có filter_3D "
+              "(model train KHÔNG bật mip). Render như baseline.")
 
     os.makedirs(out_dir, exist_ok=True)
     cameras = build_cameras(poses)
@@ -107,7 +111,8 @@ def render_test_poses(model_path, poses_csv, out_dir, sh_degree=3,
         for cam, p in zip(tqdm(cameras, desc=f"Render {os.path.basename(model_path)}"), poses):
             image = render(cam, gaussians, pipe, bg,
                            use_trained_exp=use_trained_exp,
-                           separate_sh=SPARSE_ADAM_AVAILABLE)["render"]
+                           separate_sh=SPARSE_ADAM_AVAILABLE,
+                           use_3D_filter=mip_filter)["render"]
             image = image.clamp(0.0, 1.0)
             # Lưu ĐÚNG tên (đổi đuôi -> .png) và đúng W×H (image đã là W×H của camera).
             out_name = os.path.splitext(p.image_name)[0] + ".png"
@@ -126,6 +131,7 @@ if __name__ == "__main__":
     ap.add_argument("--iteration", type=int, default=-1, help="-1 = iteration lớn nhất")
     ap.add_argument("--sh_degree", type=int, default=3)
     ap.add_argument("--antialiasing", action="store_true", help="PHẢI khớp cờ khi train")
+    ap.add_argument("--mip_filter", action="store_true", help="Mip-Splatting 3D filter (PHẢI khớp cờ khi train)")
     ap.add_argument("--white_background", action="store_true")
     ap.add_argument("--train_test_exp", action="store_true", help="nếu train có exposure comp")
     ap.add_argument("--quiet", action="store_true")
@@ -135,5 +141,5 @@ if __name__ == "__main__":
         model_path=args.model_path, poses_csv=args.poses, out_dir=args.out,
         sh_degree=args.sh_degree, iteration=args.iteration,
         antialiasing=args.antialiasing, white_background=args.white_background,
-        use_trained_exp=args.train_test_exp, quiet=args.quiet,
+        use_trained_exp=args.train_test_exp, mip_filter=args.mip_filter, quiet=args.quiet,
     )

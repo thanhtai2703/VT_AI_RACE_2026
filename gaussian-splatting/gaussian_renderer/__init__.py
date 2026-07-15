@@ -15,7 +15,7 @@ from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianR
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False, use_3D_filter=False):
     """
     Render the scene. 
     
@@ -53,7 +53,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     means3D = pc.get_xyz
     means2D = screenspace_points
-    opacity = pc.get_opacity
+    # Mip-Splatting: when the 3D filter is active, dilate scaling and compensate
+    # opacity so sub-pixel Gaussians stop aliasing at novel/zoomed-out poses.
+    opacity = pc.get_opacity_with_3D_filter if use_3D_filter else pc.get_opacity
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
@@ -64,7 +66,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     if pipe.compute_cov3D_python:
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
-        scales = pc.get_scaling
+        scales = pc.get_scaling_with_3D_filter if use_3D_filter else pc.get_scaling
         rotations = pc.get_rotation
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
